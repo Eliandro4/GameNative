@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.gamenative.PluviaApp
+import app.gamenative.PrefManager
 import app.gamenative.R
 import app.gamenative.data.DownloadInfo
 import app.gamenative.data.GameSource
@@ -25,8 +26,6 @@ import app.gamenative.ui.data.CancelConfirmation
 import app.gamenative.ui.data.DownloadItemState
 import app.gamenative.ui.data.DownloadItemStatus
 import app.gamenative.ui.data.DownloadsState
-import app.gamenative.utils.ContainerUtils
-import app.gamenative.utils.CustomGameScanner
 import app.gamenative.utils.LocaleHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -277,8 +276,8 @@ class DownloadsViewModel @Inject constructor(
             }
 
             GameSource.CUSTOM_GAME -> {
-                CustomGameScanner.scanAsLibraryItems(query = "")
-                    .firstOrNull { it.appId == libraryAppId }
+                // Local folder scanning for custom games is out of scope for the downloader.
+                null
             }
         }
     }
@@ -638,8 +637,7 @@ class DownloadsViewModel @Inject constructor(
             GameSource.GOG -> {
                 val game = gogGameDao.getById(item.appId) ?: return
                 val installPath = game.installPath.ifBlank { GOGConstants.getGameInstallPath(game.title) }
-                val container = ContainerUtils.getOrCreateContainer(appContext, "${GameSource.GOG.name}_${item.appId}")
-                val language = ContainerUtils.toContainerData(container).language
+                val language = PrefManager.containerLanguage
                 val result = GOGService.downloadGame(localizedContext, item.appId, installPath, language)
                 result.exceptionOrNull()?.message?.let { recentFailureMessages[key] = it }
             }
@@ -650,8 +648,7 @@ class DownloadsViewModel @Inject constructor(
                 val installPath = game.installPath.ifBlank {
                     EpicConstants.getGameInstallPath(appContext, game.appName)
                 }
-                val container = ContainerUtils.getOrCreateContainer(appContext, "${GameSource.EPIC.name}_${item.appId}")
-                val language = ContainerUtils.toContainerData(container).language
+                val language = PrefManager.containerLanguage
                 val result = EpicService.downloadGame(localizedContext, id, emptyList(), installPath, language)
                 result.exceptionOrNull()?.message?.let { recentFailureMessages[key] = it }
             }
@@ -689,8 +686,7 @@ class DownloadsViewModel @Inject constructor(
             GameSource.GOG -> {
                 val game = gogGameDao.getById(item.appId) ?: return
                 val installPath = game.installPath.ifBlank { GOGConstants.getGameInstallPath(game.title) }
-                val container = ContainerUtils.getOrCreateContainer(appContext, "${GameSource.GOG.name}_${item.appId}")
-                val language = ContainerUtils.toContainerData(container).language
+                val language = PrefManager.containerLanguage
                 GameDownloadService.enqueueDownload(GameSource.GOG, item.appId, installPath = installPath, containerLanguage = language)
             }
 
@@ -700,8 +696,7 @@ class DownloadsViewModel @Inject constructor(
                 val installPath = game.installPath.ifBlank {
                     EpicConstants.getGameInstallPath(appContext, game.appName)
                 }
-                val container = ContainerUtils.getOrCreateContainer(appContext, "${GameSource.EPIC.name}_${item.appId}")
-                val language = ContainerUtils.toContainerData(container).language
+                val language = PrefManager.containerLanguage
                 GameDownloadService.enqueueDownload(GameSource.EPIC, item.appId, dlcGameIds = emptyList(), installPath = installPath, containerLanguage = language)
             }
 

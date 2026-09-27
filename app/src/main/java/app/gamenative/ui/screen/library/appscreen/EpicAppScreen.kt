@@ -21,8 +21,8 @@ import androidx.compose.ui.res.stringResource
 import app.gamenative.R
 import app.gamenative.data.EpicGame
 import app.gamenative.data.LibraryItem
+import app.gamenative.PrefManager
 import app.gamenative.service.DownloadService
-import app.gamenative.service.epic.EpicCloudSavesManager
 import app.gamenative.service.epic.EpicConstants
 import app.gamenative.service.epic.EpicInstallState
 import app.gamenative.service.epic.EpicService
@@ -30,12 +30,8 @@ import app.gamenative.ui.data.AppMenuOption
 import app.gamenative.ui.data.GameDisplayInfo
 import app.gamenative.ui.enums.AppOptionMenuType
 import app.gamenative.enums.Marker
-import app.gamenative.utils.ContainerUtils
-import app.gamenative.utils.ContainerUtils.extractGameIdFromContainerId
 import app.gamenative.utils.MarkerUtils
-import com.winlator.container.ContainerData
-import com.winlator.container.ContainerManager
-import com.winlator.core.StringUtils
+import app.gamenative.utils.StorageUtils
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
@@ -114,22 +110,6 @@ class EpicAppScreen : BaseAppScreen() {
             return pendingUpdateVerifyOperations[gameId]
         }
 
-        // Shared state for game manager dialog - map of gameId to GameManagerDialogState
-        private val gameManagerDialogStates = mutableStateMapOf<Int, app.gamenative.ui.component.dialog.state.GameManagerDialogState>()
-
-        fun showGameManagerDialog(gameId: Int, state: app.gamenative.ui.component.dialog.state.GameManagerDialogState) {
-            Timber.tag(TAG).d("showGameManagerDialog: gameId=$gameId")
-            gameManagerDialogStates[gameId] = state
-        }
-
-        fun hideGameManagerDialog(gameId: Int) {
-            Timber.tag(TAG).d("hideGameManagerDialog: gameId=$gameId")
-            gameManagerDialogStates.remove(gameId)
-        }
-
-        fun getGameManagerDialogState(gameId: Int): app.gamenative.ui.component.dialog.state.GameManagerDialogState? {
-            return gameManagerDialogStates[gameId]
-        }
     }
 
     @Composable
@@ -214,8 +194,8 @@ class EpicAppScreen : BaseAppScreen() {
                 Timber.tag(TAG).i("Namespace: ${game.namespace}")
                 Timber.tag(TAG).i("Catalog Item ID: ${game.catalogId}")
                 Timber.tag(TAG).i("Developer: ${game.developer}")
-                Timber.tag(TAG).i("Install Size: ${game.installSize} bytes (${StringUtils.formatBytes(game.installSize)})")
-                Timber.tag(TAG).i("Download Size: ${game.downloadSize} bytes (${StringUtils.formatBytes(game.downloadSize)})")
+                Timber.tag(TAG).i("Install Size: ${game.installSize} bytes (${StorageUtils.formatBinarySize(game.installSize)})")
+                Timber.tag(TAG).i("Download Size: ${game.downloadSize} bytes (${StorageUtils.formatBinarySize(game.downloadSize)})")
                 Timber.tag(TAG).i("Cloud Save Enabled: ${game.cloudSaveEnabled}")
                 Timber.tag(TAG).i("========================")
 
@@ -242,15 +222,15 @@ class EpicAppScreen : BaseAppScreen() {
 
         // Format sizes for display
         val sizeOnDisk = if (game != null && game.isInstalled && game.installSize > 0) {
-            StringUtils.formatBytes(game.installSize)
+            StorageUtils.formatBinarySize(game.installSize)
         } else {
             null
         }
 
         val sizeFromStore = if (game != null) {
             when {
-                game.installSize > 0 -> StringUtils.formatBytes(game.installSize)
-                game.downloadSize > 0 -> StringUtils.formatBytes(game.downloadSize)
+                game.installSize > 0 -> StorageUtils.formatBinarySize(game.installSize)
+                game.downloadSize > 0 -> StorageUtils.formatBinarySize(game.downloadSize)
                 else -> null
             }
         } else {
@@ -274,12 +254,6 @@ class EpicAppScreen : BaseAppScreen() {
             0L
         }
 
-        val gameNameForCompatibility = game?.title ?: libraryItem.name
-        val (compatibilityMessage, compatibilityColor) = rememberCompatibilityInfo(
-            context = context,
-            gameName = gameNameForCompatibility,
-        )
-
         val displayInfo = GameDisplayInfo(
             name = game?.title ?: libraryItem.name,
             iconUrl = game?.iconUrl ?: libraryItem.iconHash,
@@ -291,8 +265,6 @@ class EpicAppScreen : BaseAppScreen() {
             installLocation = game?.installPath?.takeIf { it.isNotEmpty() },
             sizeOnDisk = sizeOnDisk,
             sizeFromStore = sizeFromStore,
-            compatibilityMessage = compatibilityMessage,
-            compatibilityColor = compatibilityColor,
         )
         Timber.tag(TAG).d("Returning GameDisplayInfo: name=${displayInfo.name}, iconUrl=${displayInfo.iconUrl}, heroImageUrl=${displayInfo.heroImageUrl}, developer=${displayInfo.developer}, installLocation=${displayInfo.installLocation}")
         return displayInfo

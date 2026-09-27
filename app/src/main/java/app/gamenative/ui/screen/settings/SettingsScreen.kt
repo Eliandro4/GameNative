@@ -123,14 +123,7 @@ private fun SettingsScreenContent(
             ) {
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Emulation section
-                SettingsSection(
-                    title = stringResource(R.string.settings_emulation_title),
-                    icon = Icons.Default.Gamepad,
-                    iconTint = PluviaTheme.colors.accentCyan,
-                ) {
-                    SettingsGroupEmulation()
-                }
+
 
                 // Game launcher accounts section
                 SettingsSection(
@@ -141,14 +134,7 @@ private fun SettingsScreenContent(
                     SettingsGroupAccounts()
                 }
 
-                // Performance section
-                SettingsSection(
-                    title = stringResource(R.string.settings_performance_title),
-                    icon = Icons.Default.Speed,
-                    iconTint = PluviaTheme.colors.accentWarning,
-                ) {
-                    SettingsGroupPerformance()
-                }
+
 
                 // Interface section
                 SettingsSection(

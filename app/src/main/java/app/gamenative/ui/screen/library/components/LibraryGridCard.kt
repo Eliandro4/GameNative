@@ -72,10 +72,8 @@ import app.gamenative.ui.data.GameCardStats
 import app.gamenative.ui.enums.PaneType
 import app.gamenative.ui.theme.PluviaTheme
 import app.gamenative.ui.util.ListItemImage
-import app.gamenative.utils.CustomGameScanner
 import com.skydoves.landscapist.ImageOptions
 import com.skydoves.landscapist.coil.CoilImage
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -669,62 +667,8 @@ internal fun getGridImageUrl(
     appInfo: LibraryItem,
     paneType: PaneType,
 ): GridImageUrls {
-    fun findSteamGridDBImage(imageType: String): String? {
-        if (appInfo.gameSource == GameSource.CUSTOM_GAME) {
-            val gameFolderPath = CustomGameScanner.getFolderPathFromAppId(appInfo.appId)
-            gameFolderPath?.let { path ->
-                val folder = File(path)
-                val imageFile = folder.listFiles()?.firstOrNull { file ->
-                    file.name.startsWith("steamgriddb_$imageType") &&
-                        (
-                            file.name.endsWith(".png", ignoreCase = true) ||
-                                file.name.endsWith(".jpg", ignoreCase = true) ||
-                                file.name.endsWith(".webp", ignoreCase = true)
-                            )
-                }
-                return imageFile?.let { android.net.Uri.fromFile(it).toString() }
-            }
-        }
-        return null
-    }
-
     return when (appInfo.gameSource) {
-        GameSource.CUSTOM_GAME -> {
-            val primary = when (paneType) {
-                PaneType.GRID_CAPSULE ->
-                    // Capsule (vertical): user "coverv"/"cover" wins over SteamGridDB capsule.
-                    CustomGameScanner.findCapsuleCoverForCustomGame(appInfo.appId)
-                        ?: findSteamGridDBImage("grid_capsule")
-                        ?: appInfo.capsuleImageUrl
-                PaneType.GRID_HERO ->
-                    // Hero (horizontal): user "coverh"/"cover" wins over SteamGridDB hero.
-                    CustomGameScanner.findHeroCoverForCustomGame(appInfo.appId)
-                        ?: findSteamGridDBImage("grid_hero")
-                        ?: appInfo.headerImageUrl
-                else -> {
-                    // Default/carousel banner is also a horizontal hero view.
-                    val heroCover = CustomGameScanner.findHeroCoverForCustomGame(appInfo.appId)
-                    val gameFolderPath = CustomGameScanner.getFolderPathFromAppId(appInfo.appId)
-                    val heroUrl = gameFolderPath?.let { path ->
-                        val folder = File(path)
-                        val heroFile = folder.listFiles()?.firstOrNull { file ->
-                            file.name.startsWith("steamgriddb_hero") &&
-                                !file.name.contains("grid") &&
-                                (
-                                    file.name.endsWith(".png", ignoreCase = true) ||
-                                        file.name.endsWith(".jpg", ignoreCase = true) ||
-                                        file.name.endsWith(".webp", ignoreCase = true)
-                                    )
-                        }
-                        heroFile?.let { android.net.Uri.fromFile(it).toString() }
-                    }
-                    heroCover ?: heroUrl ?: appInfo.headerImageUrl
-                }
-            }
-            GridImageUrls(primary = primary)
-        }
-
-        GameSource.GOG, GameSource.EPIC, GameSource.AMAZON -> {
+        GameSource.CUSTOM_GAME, GameSource.GOG, GameSource.EPIC, GameSource.AMAZON -> {
             val primary = when (paneType) {
                 PaneType.GRID_CAPSULE -> appInfo.capsuleImageUrl.ifEmpty { appInfo.iconHash }
                 else -> appInfo.headerImageUrl.ifEmpty {

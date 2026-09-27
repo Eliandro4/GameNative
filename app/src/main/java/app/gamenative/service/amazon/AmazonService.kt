@@ -672,10 +672,6 @@ class AmazonService : Service() {
                         Timber.tag("Amazon").w(e, "Failed to delete cached manifest (non-fatal)")
                     }
 
-                    withContext(Dispatchers.Main) {
-                        ContainerUtils.deleteContainer(context, "AMAZON_${game.appId}")
-                    }
-
                     val postUninstallPath = AmazonConstants.getGameInstallPath(context, game.title)
                     val postInstallDirExists = File(postUninstallPath).exists()
                     val completeMarkerExists = MarkerUtils.hasMarker(postUninstallPath, Marker.DOWNLOAD_COMPLETE_MARKER)
@@ -929,10 +925,6 @@ class AmazonService : Service() {
             }.onFailure {
                 Timber.tag("Amazon").w(it, "Failed to mark game uninstalled after failed install: ${game.productId}")
             }
-        }
-
-        withContext(Dispatchers.Main) {
-            ContainerUtils.deleteContainer(context, "AMAZON_${game.appId}")
         }
 
         PluviaApp.events.emitJava(AndroidEvent.LibraryInstallStatusChanged(game.appId, GameSource.AMAZON))

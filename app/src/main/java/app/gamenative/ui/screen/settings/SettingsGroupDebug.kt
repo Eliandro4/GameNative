@@ -32,7 +32,7 @@ import com.alorma.compose.settings.ui.SettingsSwitch
 import app.gamenative.PrefManager
 import app.gamenative.ui.util.SnackbarManager
 import app.gamenative.ui.theme.settingsTileColorsAlt
-import com.winlator.PrefManager as WinlatorPrefManager
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -48,7 +48,6 @@ fun SettingsGroupDebug() {
     val isPreview = LocalInspectionMode.current
     if (!isPreview) {
         PrefManager.init(context)
-        WinlatorPrefManager.init(context)
     }
 
     // Load Wine debug channels and prepare selection state
@@ -84,9 +83,7 @@ fun SettingsGroupDebug() {
     var enableWineDebugPref by rememberSaveable {
         mutableStateOf(if (isPreview) false else PrefManager.enableWineDebug)
     }
-    var enableBox86Logs by rememberSaveable { mutableStateOf(
-        if (isPreview) false else WinlatorPrefManager.getBoolean("enable_box86_64_logs", false)
-    ) }
+
     var latestCrashFile: File? by rememberSaveable { mutableStateOf(null) }
     LaunchedEffect(Unit) {
         val crashDir = File(context.getExternalFilesDir(null), "crash_logs")
@@ -210,18 +207,7 @@ fun SettingsGroupDebug() {
                 }
             },
         )
-        SettingsSwitch(
-            colors = settingsTileColorsAlt(),
-            state = enableBox86Logs,
-            title = { Text(text = stringResource(R.string.settings_debug_box_logs_title)) },
-            subtitle = { Text(text = stringResource(R.string.settings_debug_box_logs_subtitle)) },
-            onCheckedChange = {
-                enableBox86Logs = it
-                if (!isPreview) {
-                    WinlatorPrefManager.putBoolean("enable_box86_64_logs", it)
-                }
-            },
-        )
+
         SettingsMenuLink(
             colors = settingsTileColors(),
             title = { Text(text = stringResource(R.string.settings_debug_view_crash_title)) },

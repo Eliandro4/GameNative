@@ -22,7 +22,6 @@ import app.gamenative.service.download.GameDownloadService
 import app.gamenative.service.download.NativeTreeDelete
 import app.gamenative.utils.ContainerUtils
 import app.gamenative.service.NotificationHelper
-import com.winlator.container.Container
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -272,15 +271,6 @@ class EpicService : Service() {
                 // Uninstall from database (keeps the entry but marks as not installed)
                 instance.epicManager.uninstall(appId)
 
-                // Delete container
-                // Use game.id (the auto-generated numeric Room DB primary key) to match the container
-                // ID format used at creation time: "EPIC_${libraryItem.gameId}" = "EPIC_${game.id}".
-                // Previously used game.appName (the Legendary identifier, e.g. a UUID) which never
-                // matched the stored container ID, causing orphaned containers.
-                withContext(Dispatchers.Main) {
-                    ContainerUtils.deleteContainer(context, "EPIC_${game.id}")
-                }
-
                 // Trigger library refresh event
                 app.gamenative.PluviaApp.events.emitJava(
                     app.gamenative.events.AndroidEvent.LibraryInstallStatusChanged(appId, app.gamenative.data.GameSource.EPIC)
@@ -495,30 +485,6 @@ class EpicService : Service() {
                         // Transfer is complete - unregister from GameDownloadService
                         GameDownloadService.unregisterDownload(context, GameSource.EPIC, appId.toString())
 
-                        // Download cloud saves so they're ready before first launch.
-                        // Status message keeps isDownloading() true so Play stays hidden during sync.
-                        val epicAppId = "EPIC_$gameId"
-                        if (game.cloudSaveEnabled && !ContainerUtils.isLocalSavesOnly(context, epicAppId)) {
-                            downloadInfo.setPostInstallSyncing(true)
-                            PluviaApp.events.emit(AndroidEvent.PostInstallSyncStatusChanged(gameId, true))
-                            downloadInfo.updateStatusMessage("Syncing saves...")
-                            try {
-                                EpicCloudSavesManager.syncCloudSaves(
-                                    context = context,
-                                    appId = gameId,
-                                    preferredAction = "download",
-                                )
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                Timber.e(e, "[PostInstallSync] Cloud save sync failed for game $gameId")
-                            } finally {
-                                downloadInfo.setPostInstallSyncing(false)
-                                downloadInfo.updateStatusMessage(null)
-                                PluviaApp.events.emit(AndroidEvent.PostInstallSyncStatusChanged(gameId, false))
-                            }
-                        }
-
                         SnackbarManager.show("Download completed successfully!")
                         downloadInfo.setProgress(1.0f)
                     } else {
@@ -563,70 +529,6 @@ class EpicService : Service() {
         }
 
         // ==========================================================================
-        // Game Launcher Helpers
-        // ==========================================================================
-
-        suspend fun getGameLaunchToken(
-            context: Context,
-            namespace: String? = null,
-            catalogItemId: String? = null,
-            requiresOwnershipToken: Boolean = false
-        ): Result<EpicGameToken> {
-            return EpicAuthManager.getGameLaunchToken(context, namespace, catalogItemId, requiresOwnershipToken)
-        }
-
-        suspend fun buildLaunchParameters(
-            context: Context,
-            container: Container,
-            game: EpicGame,
-            offline: Boolean = false,
-            languageCode: String = "en-US"
-        ): Result<List<String>> {
-            return EpicGameLauncher.buildLaunchParameters(context, container, game, offline, languageCode)
-        }
-
-        fun cleanupLaunchTokens(context: Context, container: Container? = null) {
-            EpicGameLauncher.cleanupOwnershipTokens(context, container)
-        }
-
-        // ==========================================================================
-        // EOS OVERLAY
-        // ==========================================================================
-
-        /**
-         * Install (or re-install) the EOS overlay into [container].
-         *
-         * Downloads the latest overlay from Epic's CDN, replaces incompatible DLLs
-         * with Wine-compatible stubs, and writes the overlay path to the Wine registry.
-         *
-         * @param context         Android context.
-         * @param container       Target Wine container.
-         * @param forceReinstall  Re-download even if the overlay appears installed.
-         * @param onProgress      Optional callback: (downloadedChunks, totalChunks).
-         */
-        suspend fun installOverlay(
-            context: Context,
-            container: Container,
-            forceReinstall: Boolean = false,
-            onProgress: ((Int, Int) -> Unit)? = null,
-        ): Result<Unit> {
-            val instance = getInstance()
-                ?: return Result.failure(Exception("EpicService not running"))
-            return instance.epicOverlayManager.installOverlay(
-                context, container, forceReinstall, onProgress,
-            )
-        }
-
-        /**
-         * Remove the EOS overlay from [container] and clear its registry entry.
-         */
-        suspend fun removeOverlay(context: Context, container: Container): Result<Unit> {
-            val instance = getInstance()
-                ?: return Result.failure(Exception("EpicService not running"))
-            return instance.epicOverlayManager.removeOverlay(context, container)
-        }
-
-        // ==========================================================================
         // CLOUD SAVES HELPERS
         // ==========================================================================
 
@@ -656,9 +558,6 @@ class EpicService : Service() {
 
     @Inject
     lateinit var epicDownloadManager: EpicDownloadManager
-
-    @Inject
-    lateinit var epicOverlayManager: EpicOverlayManager
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 

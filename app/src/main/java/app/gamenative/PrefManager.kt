@@ -15,7 +15,6 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import app.gamenative.data.GameSource
-import app.gamenative.powercontrol.autotuning.DeviceGate
 import app.gamenative.enums.AppTheme
 import app.gamenative.ui.enums.AppFilter
 import app.gamenative.ui.enums.HomeDestination
@@ -23,9 +22,6 @@ import app.gamenative.ui.enums.LibraryTab
 import app.gamenative.ui.enums.Orientation
 import app.gamenative.ui.enums.PaneType
 import com.materialkolor.PaletteStyle
-import com.winlator.box86_64.Box86_64Preset
-import com.winlator.container.Container
-import com.winlator.core.DefaultVersion
 import `in`.dragonbra.javasteam.enums.EPersonaState
 import java.io.IOException
 import java.util.EnumSet
@@ -180,41 +176,14 @@ object PrefManager {
             setPref(LAST_PICS_CHANGE_NUMBER, value)
         }
 
-    /* Container Default Settings */
     private val SCREEN_SIZE = stringPreferencesKey("screen_size")
     var screenSize: String
-        get() = getPref(SCREEN_SIZE, PluviaApp.getDefaultScreenSize())
+        get() = getPref(SCREEN_SIZE, "16:9")
         set(value) {
             setPref(SCREEN_SIZE, value)
         }
 
-    private val ENV_VARS = stringPreferencesKey("env_vars")
-    var envVars: String
-        get() = getPref(ENV_VARS, Container.DEFAULT_ENV_VARS)
-        set(value) {
-            setPref(ENV_VARS, value)
-        }
 
-    private val GRAPHICS_DRIVER = stringPreferencesKey("graphics_driver")
-    var graphicsDriver: String
-        get() = getPref(GRAPHICS_DRIVER, Container.DEFAULT_GRAPHICS_DRIVER)
-        set(value) {
-            setPref(GRAPHICS_DRIVER, value)
-        }
-
-    private val GRAPHICS_DRIVER_VERSION = stringPreferencesKey("graphics_driver_version")
-    var graphicsDriverVersion: String
-        get() = getPref(GRAPHICS_DRIVER_VERSION, "")
-        set(value) {
-            setPref(GRAPHICS_DRIVER_VERSION, value)
-        }
-
-    private val GRAPHICS_DRIVER_CONFIG = stringPreferencesKey("graphics_driver_config")
-    var graphicsDriverConfig: String
-        get() = getPref(GRAPHICS_DRIVER_CONFIG, Container.DEFAULT_GRAPHICSDRIVERCONFIG)
-        set(value) {
-            setPref(GRAPHICS_DRIVER_CONFIG, value)
-        }
 
     private val RENDERER_PRESENT_MODE = stringPreferencesKey("renderer_present_mode")
     var rendererPresentMode: String
@@ -269,96 +238,7 @@ object PrefManager {
             setPref(SHARPNESS_DENOISE, value.coerceIn(0, 100))
         }
 
-    private val CONTAINER_VARIANT = stringPreferencesKey("container_variant")
-    var containerVariant: String
-        get() = getPref(CONTAINER_VARIANT, Container.DEFAULT_VARIANT)
-        set(value) {
-            setPref(CONTAINER_VARIANT, value)
-        }
 
-    private val WINE_VERSION = stringPreferencesKey("wine_version")
-    var wineVersion: String
-        get() = getPref(WINE_VERSION, Container.DEFAULT_WINE_VERSION)
-        set(value) {
-            setPref(WINE_VERSION, value)
-        }
-
-    private val EMULATOR = stringPreferencesKey("emulator")
-    var emulator: String
-        get() = getPref(EMULATOR, Container.DEFAULT_EMULATOR)
-        set(value) {
-            setPref(EMULATOR, value)
-        }
-
-    private val FEXCORE_VERSION = stringPreferencesKey("fexcore_version")
-    var fexcoreVersion: String
-        get() = getPref(FEXCORE_VERSION, DefaultVersion.FEXCORE)
-        set(value) {
-            setPref(FEXCORE_VERSION, value)
-        }
-
-    private val FEXCORE_TSO_MODE = stringPreferencesKey("fexcore_tso_mode")
-    var fexcoreTSOMode: String
-        get() = getPref(FEXCORE_TSO_MODE, "Fast")
-        set(value) {
-            setPref(FEXCORE_TSO_MODE, value)
-        }
-
-    private val FEXCORE_X87_MODE = stringPreferencesKey("fexcore_x87_mode")
-    var fexcoreX87Mode: String
-        get() = getPref(FEXCORE_X87_MODE, "Fast")
-        set(value) {
-            setPref(FEXCORE_X87_MODE, value)
-        }
-
-    private val FEXCORE_MULTIBLOCK = stringPreferencesKey("fexcore_multiblock")
-    var fexcoreMultiBlock: String
-        get() = getPref(FEXCORE_MULTIBLOCK, "Disabled")
-        set(value) {
-            setPref(FEXCORE_MULTIBLOCK, value)
-        }
-
-    private val DXWRAPPER = stringPreferencesKey("dxwrapper")
-    var dxWrapper: String
-        get() = getPref(DXWRAPPER, Container.DEFAULT_DXWRAPPER)
-        set(value) {
-            setPref(DXWRAPPER, value)
-        }
-
-    private val DXWRAPPER_CONFIG = stringPreferencesKey("dxwrapperConfig")
-    var dxWrapperConfig: String
-        get() = getPref(DXWRAPPER_CONFIG, Container.DEFAULT_DXWRAPPERCONFIG)
-        set(value) {
-            setPref(DXWRAPPER_CONFIG, value)
-        }
-
-    private val AUDIO_DRIVER = stringPreferencesKey("audio_driver")
-    var audioDriver: String
-        get() = getPref(AUDIO_DRIVER, Container.DEFAULT_AUDIO_DRIVER)
-        set(value) {
-            setPref(AUDIO_DRIVER, value)
-        }
-
-    private val PULSEAUDIO_LOW_LATENCY = booleanPreferencesKey("pulseaudio_low_latency")
-    var pulseaudioLowLatency: Boolean
-        get() = getPref(PULSEAUDIO_LOW_LATENCY, false)
-        set(value) {
-            setPref(PULSEAUDIO_LOW_LATENCY, value)
-        }
-
-    private val WIN_COMPONENTS = stringPreferencesKey("wincomponents")
-    var winComponents: String
-        get() = getPref(WIN_COMPONENTS, Container.DEFAULT_WINCOMPONENTS)
-        set(value) {
-            setPref(WIN_COMPONENTS, value)
-        }
-
-    private val DRIVES = stringPreferencesKey("drives")
-    var drives: String
-        get() = getPref(DRIVES, Container.DEFAULT_DRIVES)
-        set(value) {
-            setPref(DRIVES, value)
-        }
 
     private val QUICK_MENU_LAST_TAB = intPreferencesKey("quick_menu_last_tab")
     var quickMenuLastTab: Int
@@ -612,68 +492,7 @@ object PrefManager {
             setPref(DISABLE_LIBREDIRECT, value)
         }
 
-    private val SUSPEND_POLICY = stringPreferencesKey("suspend_policy")
-    var suspendPolicy: String
-        get() = Container.normalizeSuspendPolicy(getPref(SUSPEND_POLICY, Container.SUSPEND_POLICY_MANUAL))
-        set(value) {
-            setPref(SUSPEND_POLICY, Container.normalizeSuspendPolicy(value))
-        }
 
-    private val CPU_LIST = stringPreferencesKey("cpu_list")
-    var cpuList: String
-        get() = getPref(CPU_LIST, Container.getFallbackCPUList())
-        set(value) {
-            setPref(CPU_LIST, value)
-        }
-
-    private val CPU_LIST_WOW64 = stringPreferencesKey("cpu_list_wow64")
-    var cpuListWoW64: String
-        get() = getPref(CPU_LIST_WOW64, Container.getFallbackCPUListWoW64())
-        set(value) {
-            setPref(CPU_LIST_WOW64, value)
-        }
-
-    private val WOW64_MODE = booleanPreferencesKey("wow64_mode")
-    var wow64Mode: Boolean
-        get() = getPref(WOW64_MODE, true)
-        set(value) {
-            setPref(WOW64_MODE, value)
-        }
-
-    private val STARTUP_SELECTION = intPreferencesKey("startup_selection")
-    var startupSelection: Int
-        get() = getPref(STARTUP_SELECTION, Container.STARTUP_SELECTION_ESSENTIAL.toInt())
-        set(value) {
-            setPref(STARTUP_SELECTION, value)
-        }
-
-    private val CONTAINER_LANGUAGE = stringPreferencesKey("container_language")
-    var containerLanguage: String
-        get() = getPref(CONTAINER_LANGUAGE, "english")
-        set(value) {
-            setPref(CONTAINER_LANGUAGE, value)
-        }
-
-    private val BOX86_PRESET = stringPreferencesKey("box86_preset")
-    var box86Preset: String
-        get() = getPref(BOX86_PRESET, Box86_64Preset.COMPATIBILITY)
-        set(value) {
-            setPref(BOX86_PRESET, value)
-        }
-
-    private val BOX64_PRESET = stringPreferencesKey("box64_preset")
-    var box64Preset: String
-        get() = getPref(BOX64_PRESET, Box86_64Preset.COMPATIBILITY)
-        set(value) {
-            setPref(BOX64_PRESET, value)
-        }
-
-    private val FEXCORE_PRESET = stringPreferencesKey("fexcore_preset")
-    var fexcorePreset: String
-        get() = getPref(FEXCORE_PRESET, com.winlator.fexcore.FEXCorePreset.INTERMEDIATE)
-        set(value) {
-            setPref(FEXCORE_PRESET, value)
-        }
 
     private val RENDERER = stringPreferencesKey("renderer")
     var renderer: String
@@ -763,7 +582,7 @@ object PrefManager {
     // External display input mode (off|touchpad|keyboard|hybrid)
     private val EXTERNAL_DISPLAY_INPUT_MODE = stringPreferencesKey("external_display_input_mode")
     var externalDisplayInputMode: String
-        get() = getPref(EXTERNAL_DISPLAY_INPUT_MODE, Container.DEFAULT_EXTERNAL_DISPLAY_MODE)
+        get() = getPref(EXTERNAL_DISPLAY_INPUT_MODE, "touchpad")
         set(value) { setPref(EXTERNAL_DISPLAY_INPUT_MODE, value) }
 
     private val EXTERNAL_DISPLAY_SWAP = booleanPreferencesKey("external_display_swap")
@@ -785,21 +604,6 @@ object PrefManager {
         set(value) {
             setPref(PORTRAIT_MODE, value)
         }
-
-    private val BOX_86_VERSION = stringPreferencesKey("box86_version")
-    var box86Version: String
-        get() = getPref(BOX_86_VERSION, DefaultVersion.BOX86)
-        set(value) {
-            setPref(BOX_86_VERSION, value)
-        }
-
-    private val BOX_64_VERSION = stringPreferencesKey("box64_version")
-    var box64Version: String
-        get() = getPref(BOX_64_VERSION, DefaultVersion.BOX64)
-        set(value) {
-            setPref(BOX_64_VERSION, value)
-        }
-
     private val EXEC_ARGS = stringPreferencesKey("exec_args")
     var execArgs: String
         get() = getPref(EXEC_ARGS, "")
@@ -833,6 +637,13 @@ object PrefManager {
         get() = getPref(CELL_ID_MANUALLY_SET, false)
         set(value) {
             setPref(CELL_ID_MANUALLY_SET, value)
+        }
+
+    private val CONTAINER_LANGUAGE = stringPreferencesKey("container_language")
+    var containerLanguage: String
+        get() = getPref(CONTAINER_LANGUAGE, "english")
+        set(value) {
+            setPref(CONTAINER_LANGUAGE, value)
         }
 
     private val USER_NAME = stringPreferencesKey("user_name")
@@ -1729,8 +1540,4 @@ object PrefManager {
             }
         }
     }
-    private val POWER_CONTROL_DEFAULT_ENABLED = booleanPreferencesKey("power_control_default_enabled")
-    var powerControlDefaultEnabled: Boolean
-        get() = getPref(POWER_CONTROL_DEFAULT_ENABLED, DeviceGate.isDeviceSupported())
-        set(value) { setPref(POWER_CONTROL_DEFAULT_ENABLED, value) }
 }

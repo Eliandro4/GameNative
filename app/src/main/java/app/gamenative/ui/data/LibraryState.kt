@@ -6,7 +6,6 @@ import app.gamenative.data.GameSource
 import app.gamenative.data.LibraryItem
 import app.gamenative.data.SteamCollection
 import app.gamenative.ui.enums.AppFilter
-import app.gamenative.utils.DeviceGameStatsService.DeviceGameStats
 import app.gamenative.ui.enums.LibraryTab
 import app.gamenative.ui.enums.SortOption
 import java.util.EnumSet
@@ -53,12 +52,6 @@ data class LibraryState(
     // Compatibility status map: game name -> compatibility status
     val compatibilityMap: Map<String, GameCompatibilityStatus> = emptyMap(),
 
-    // Device-specific play stats, grouped by platform then game name
-    val deviceGameStats: Map<GameSource, Map<String, DeviceGameStats>> = emptyMap(),
-
-    // GPU-specific play stats (across all devices with this GPU), grouped by platform then game name
-    val gpuGameStats: Map<GameSource, Map<String, DeviceGameStats>> = emptyMap(),
-
     // Sort option for the library
     val currentSortOption: SortOption = PrefManager.librarySortOption,
 
@@ -94,16 +87,10 @@ data class GameCardStats(
 
 fun LibraryState.statsFor(item: LibraryItem): GameCardStats? = statsFor(item.gameSource, item.name)
 
-/** Combined device + GPU stats for a game, or null when neither dataset has an entry. */
-fun LibraryState.statsFor(source: GameSource, name: String): GameCardStats? {
-    val device = deviceGameStats[source]?.get(name)
-    val gpu = gpuGameStats[source]?.get(name)
-    if (device == null && gpu == null) return null
-    return GameCardStats(
-        runsGpu = gpu?.successfulRuns ?: 0,
-        reviewsDevice = device?.fiveStarReviews ?: 0,
-        reviewsGpu = gpu?.fiveStarReviews ?: 0,
-        fps = device?.medianFps,
-        sessionSec = device?.medianSessionSec,
-    )
-}
+/**
+ * Device/GPU play-stats collection (compatibility/config recommendations) was removed along with
+ * the launcher — this always returns null now. Kept so callers (sort options, card display) don't
+ * need to be restructured.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun LibraryState.statsFor(source: GameSource, name: String): GameCardStats? = null

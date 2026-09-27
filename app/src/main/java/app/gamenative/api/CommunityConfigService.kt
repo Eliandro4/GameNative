@@ -2,8 +2,6 @@ package app.gamenative.api
 
 import app.gamenative.BuildConfig
 import app.gamenative.utils.Net
-import com.winlator.container.Container
-import com.winlator.core.envvars.EnvVars
 import java.io.IOException
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
@@ -863,12 +861,69 @@ private fun isProtectedCommunityEnvironmentName(name: String): Boolean {
         normalized.startsWith("BOX86_LD_")
 }
 
+// Space-separated "KEY=VALUE" pairs (spaces/backslashes within a key or value are
+// backslash-escaped). This is a plain string serialization format used to persist a
+// community config's environment variables; it has no dependency on any container/runtime
+// object, just a text convention that predates it.
+private fun escapeCommunityEnvVarToken(value: String): String =
+    value.replace("\\", "\\\\").replace(" ", "\\ ")
+
+private fun unescapeCommunityEnvVarToken(value: String): String {
+    val builder = StringBuilder(value.length)
+    var index = 0
+    while (index < value.length) {
+        val char = value[index]
+        if (char == '\\' && index + 1 < value.length) {
+            builder.append(value[index + 1])
+            index += 2
+        } else {
+            builder.append(char)
+            index++
+        }
+    }
+    return builder.toString()
+}
+
+private fun splitCommunityEnvVarsOnUnescapedSpaces(value: String): List<String> {
+    val parts = mutableListOf<String>()
+    val current = StringBuilder()
+    var index = 0
+    while (index < value.length) {
+        val char = value[index]
+        if (char == '\\' && index + 1 < value.length) {
+            current.append(char).append(value[index + 1])
+            index += 2
+        } else if (char == ' ') {
+            if (current.isNotEmpty()) {
+                parts += current.toString()
+                current.setLength(0)
+            }
+            index++
+        } else {
+            current.append(char)
+            index++
+        }
+    }
+    if (current.isNotEmpty()) parts += current.toString()
+    return parts
+}
+
+private fun parseCommunityEnvVars(value: String): List<Pair<String, String>> {
+    if (value.isEmpty()) return emptyList()
+    return splitCommunityEnvVarsOnUnescapedSpaces(value).mapNotNull { part ->
+        val separatorIndex = part.indexOf("=")
+        // Tolerate stray tokens (legacy data corrupted by an old unescaped serializer).
+        if (separatorIndex < 0) return@mapNotNull null
+        val name = unescapeCommunityEnvVarToken(part.substring(0, separatorIndex))
+        val varValue = unescapeCommunityEnvVarToken(part.substring(separatorIndex + 1))
+        name to varValue
+    }
+}
+
 internal fun sanitizeCommunityEnvironmentVariables(value: String): String {
-    val environmentVariables = EnvVars(value)
-    val sanitized = EnvVars()
+    val sanitized = LinkedHashMap<String, String>()
     var accepted = 0
-    for (name in environmentVariables) {
-        val variableValue = environmentVariables.get(name)
+    for ((name, variableValue) in parseCommunityEnvVars(value)) {
         if (accepted >= MAX_ENVIRONMENT_VARIABLES) break
         if (!communityEnvironmentNamePattern.matches(name) ||
             name.length > MAX_ENVIRONMENT_NAME_CHARS ||
@@ -878,10 +933,12 @@ internal fun sanitizeCommunityEnvironmentVariables(value: String): String {
         ) {
             continue
         }
-        sanitized.put(name, variableValue)
+        sanitized[name] = variableValue
         accepted++
     }
-    return sanitized.toString()
+    return sanitized.entries.joinToString(" ") { (name, varValue) ->
+        "${escapeCommunityEnvVarToken(name)}=${escapeCommunityEnvVarToken(varValue)}"
+    }
 }
 
 internal fun sanitizeCommunityConfig(config: JsonObject): JsonObject = JsonObject(
@@ -926,14 +983,16 @@ internal fun isValidCommunityConfig(
 ): Boolean {
     fun value(key: String) = (config[key] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
 
+    // "bionic"/"glibc" are the two container-variant identifiers used by community configs.
+    // No Container/runtime class exists to source these from any more, so they're inlined.
     val variant = value("containerVariant")
-    if (!variant.equals(Container.BIONIC, ignoreCase = true) &&
-        !variant.equals(Container.GLIBC, ignoreCase = true)
+    if (!variant.equals("bionic", ignoreCase = true) &&
+        !variant.equals("glibc", ignoreCase = true)
     ) {
         return false
     }
-    if (!allowGlibc && variant.equals(Container.GLIBC, ignoreCase = true)) return false
-    if (!variant.equals(Container.GLIBC, ignoreCase = true) && value("wineVersion").isEmpty()) return false
+    if (!allowGlibc && variant.equals("glibc", ignoreCase = true)) return false
+    if (!variant.equals("glibc", ignoreCase = true) && value("wineVersion").isEmpty()) return false
     return value("dxwrapper").isNotEmpty() && value("dxwrapperConfig").isNotEmpty()
 }
 

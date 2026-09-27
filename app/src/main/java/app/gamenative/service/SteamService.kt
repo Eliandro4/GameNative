@@ -59,16 +59,12 @@ import app.gamenative.utils.ContainerUtils
 import app.gamenative.utils.FileUtils
 import app.gamenative.utils.LicenseSerializer
 import app.gamenative.utils.LocaleHelper
-import app.gamenative.utils.LsfgVkManager
 import app.gamenative.utils.MarkerUtils
 import app.gamenative.utils.Net
 import app.gamenative.utils.SteamUtils
 import app.gamenative.utils.asyncIsolated
 import app.gamenative.utils.CURRENT_UFS_PARSE_VERSION
 import app.gamenative.utils.generateSteamApp
-import app.gamenative.workshop.WorkshopManager
-import com.winlator.container.Container
-import com.winlator.xenvironment.ImageFs
 import dagger.hilt.android.AndroidEntryPoint
 import app.gamenative.service.download.GameDownloadService
 import app.gamenative.service.download.NativeTreeDelete
@@ -189,12 +185,10 @@ import okhttp3.Request
 import okhttp3.FormBody
 import org.json.JSONArray
 import org.json.JSONObject
-import com.winlator.container.ContainerManager
 import app.gamenative.statsgen.StatType
 import app.gamenative.statsgen.StatsAchievementsGenerator
 import app.gamenative.statsgen.VdfParser
 import app.gamenative.utils.DownloadSpeedConfig
-import app.gamenative.utils.CustomGameScanner
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -1975,17 +1969,6 @@ class SteamService : Service(), IChallengeUrlChanged {
                 )?.executable ?: ""
         }
 
-        /**
-         * Resolves the effective launch executable for a Steam game (container config or auto-detected).
-         * Returns a non-empty sentinel when [Container.isLaunchRealSteam] or
-         * [Container.isLaunchBionicSteam] is true so the launch is not blocked.
-         */
-        fun getLaunchExecutable(appId: String, container: Container): String {
-            if (container.isLaunchRealSteam || container.isLaunchBionicSteam) return "steam"
-            val gameId = ContainerUtils.extractGameIdFromContainerId(appId)
-            return container.executablePath.ifEmpty { getInstalledExe(gameId) }
-        }
-
         suspend fun deleteApp(appId: Int): Boolean = withContext(Dispatchers.IO) {
             // snapshot path before marker removal (removing the marker changes resolution)
             val appInfo = getInstalledApp(appId)
@@ -1996,7 +1979,6 @@ class SteamService : Service(), IChallengeUrlChanged {
                 val manualFolders = PrefManager.customGameManualFolders.toMutableSet()
                 manualFolders.remove(folderPath)
                 PrefManager.customGameManualFolders = manualFolders
-                CustomGameScanner.invalidateCache()
 
                 MarkerUtils.removeMarker(folderPath, Marker.DOWNLOAD_COMPLETE_MARKER)
 
@@ -2076,12 +2058,7 @@ class SteamService : Service(), IChallengeUrlChanged {
                 instance?.let { svc -> stale.updateStatusMessage(svc.getString(R.string.download_preparing)) }
             }
             return getAppInfoOf(appId)?.let { appInfo ->
-                val container = ContainerManager(instance!!.applicationContext).getContainerById("STEAM_${appId}")
-                val containerLanguage = if (container != null) {
-                    container.language
-                } else {
-                    PrefManager.containerLanguage
-                }
+                val containerLanguage = PrefManager.containerLanguage
 
                 Timber.tag("SteamService").d("downloadApp: downloading app $appId with language $containerLanguage, branch $branch")
 
@@ -2094,31 +2071,6 @@ class SteamService : Service(), IChallengeUrlChanged {
                     containerLanguage = containerLanguage,
                     isUpdateOrVerify = isUpdateOrVerify)
             }
-        }
-
-        fun isImageFsInstalled(context: Context): Boolean {
-            return ImageFs.find(context).rootDir.exists()
-        }
-
-        fun isImageFsInstallable(context: Context, variant: String): Boolean {
-            val imageFs = ImageFs.find(context)
-            if (variant.equals(Container.BIONIC)) {
-                return File(imageFs.filesDir, "imagefs_bionic.txz").exists() || context.assets.list("")
-                    ?.contains("imagefs_bionic.txz") == true
-            } else {
-                return File(imageFs.filesDir, "imagefs_gamenative.txz").exists() || context.assets.list("")
-                    ?.contains("imagefs_gamenative.txz") == true
-            }
-        }
-
-        fun isSteamInstallable(context: Context): Boolean {
-            val imageFs = ImageFs.find(context)
-            return File(imageFs.filesDir, "steam.tzst").exists()
-        }
-
-        fun isFileInstallable(context: Context, filename: String): Boolean {
-            val imageFs = ImageFs.find(context)
-            return File(imageFs.filesDir, filename).exists()
         }
 
         suspend fun fetchFile(
@@ -2203,7 +2155,7 @@ class SteamService : Service(), IChallengeUrlChanged {
             context: Context,
         ) = parentScope.asyncIsolated {
             Timber.i("imagefs will be downloaded")
-            if (variant == Container.BIONIC) {
+            if (variant == "bionic") {
                 val dest = File(instance!!.filesDir, "imagefs_bionic.txz")
                 Timber.d("Downloading imagefs_bionic to " + dest.toString())
                 fetchFileWithFallback("imagefs_bionic.txz", dest, context, onDownloadProgress)
@@ -2886,49 +2838,6 @@ class SteamService : Service(), IChallengeUrlChanged {
                 // best-effort and may be cancelled, so this must not be deferred past the sync block.
                 downloadInfo.clearPersistedBytesDownloaded(appDirPath)
 
-                // Download cloud saves so they're ready before first launch.
-                // Uses the container's own path directly — no activation of the shared xuser
-                // symlink needed, so this is safe to run concurrently with any other game session.
-                instance?.let { svc ->
-                    val appId = downloadInfo.gameId
-                    val steamId = userSteamId
-                    val containerId = "${GameSource.STEAM.name}_$appId"
-                    // Skip post-install sync for utility apps (e.g., Lossless Scaling)
-                    val isUtilityApp = appId == LsfgVkManager.LOSSLESS_SCALING_APP_ID
-                    if (!isUtilityApp) {
-                        if (steamId != null && !ContainerUtils.isLocalSavesOnly(svc.applicationContext, containerId)) {
-                            downloadInfo.setPostInstallSyncing(true)
-                            downloadInfo.updateStatusMessage("Syncing saves...")
-                            PluviaApp.events.emit(AndroidEvent.PostInstallSyncStatusChanged(appId, true))
-                            try {
-                                val container = ContainerUtils.getOrCreateContainer(svc.applicationContext, containerId)
-                                val prefixToPath: (String) -> String = { prefix ->
-                                    PathType.from(prefix).toAbsPath(container, appId, steamId.accountID)
-                                }
-                                val postSyncInfo = forceSyncUserFiles(
-                                    appId = appId,
-                                    prefixToPath = prefixToPath,
-                                    preferredSave = SaveLocation.Remote,
-                                    parentScope = parentScope,
-                                ).await()
-                                if (postSyncInfo.syncResult !in setOf(SyncResult.Success, SyncResult.UpToDate)) {
-                                    Timber.w("[PostInstallSync] Cloud save sync finished with ${postSyncInfo.syncResult} for app $appId")
-                                }
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                Timber.e(e, "[PostInstallSync] Cloud save sync failed for app $appId")
-                            } finally {
-                                downloadInfo.setPostInstallSyncing(false)
-                                downloadInfo.updateStatusMessage(null)
-                                PluviaApp.events.emit(AndroidEvent.PostInstallSyncStatusChanged(appId, false))
-                            }
-                        }
-                    } else {
-                        Timber.d("Skipped container creation Lossless Scaling")
-                        PluviaApp.events.emit(AndroidEvent.PostInstallSyncStatusChanged(appId, false))
-                    }
-                }
             }
         }
 
@@ -3026,9 +2935,6 @@ class SteamService : Service(), IChallengeUrlChanged {
 
             try {
                 val context = instance?.applicationContext ?: return@asyncIsolated PostSyncInfo(SyncResult.UnknownFail)
-                // Migrate GSE Saves to Steam userdata
-                SteamUtils.migrateGSESavesToSteamUserdata(context, appId)
-
                 var syncResult = PostSyncInfo(SyncResult.UnknownFail)
 
                 val maxAttempts = 3
@@ -3118,9 +3024,6 @@ class SteamService : Service(), IChallengeUrlChanged {
 
             try {
                 val context = instance?.applicationContext ?: return@asyncIsolated PostSyncInfo(SyncResult.UnknownFail)
-                // Migrate GSE Saves to Steam userdata
-                SteamUtils.migrateGSESavesToSteamUserdata(context, appId)
-
                 var syncResult = PostSyncInfo(SyncResult.UnknownFail)
 
                 val maxAttempts = 3
@@ -3179,11 +3082,6 @@ class SteamService : Service(), IChallengeUrlChanged {
                 }
 
                 try {
-                    try {
-                        syncAchievementsFromGoldberg(context, appId)
-                    } catch (e: Exception) {
-                        Timber.e(e, "Achievement sync failed for appId=$appId, continuing with cloud save sync")
-                    }
 
                     val maxAttempts = 3
                     for (attempt in 1..maxAttempts) {
@@ -3770,282 +3668,6 @@ class SteamService : Service(), IChallengeUrlChanged {
                 null
             }
         }
-
-        suspend fun generateAchievements(appId: Int, configDirectory: String) {
-            val steamUser = instance!!._steamUser!!
-            val userStats = instance?._steamUserStats!!.getUserStats(appId, steamUser.steamID!!).await()
-            val schemaArray = userStats.schema.toByteArray()
-            val generator = StatsAchievementsGenerator()
-            val result = generator.generateStatsAchievements(schemaArray, userStats, configDirectory)
-            cachedAchievements = result.achievements
-            cachedAchievementsAppId = appId
-
-            val nameToBlockBit = result.nameToBlockBit
-            Timber.d("nameToBlockBit size=${nameToBlockBit.size} for appId=$appId")
-            if (nameToBlockBit.isNotEmpty()) {
-                val configDir = File(configDirectory)
-                if (!configDir.exists()) configDir.mkdirs()
-                val mappingJson = JSONObject()
-                nameToBlockBit.forEach { (name, pair) ->
-                    mappingJson.put(name, JSONArray(listOf(pair.first, pair.second)))
-                }
-                File(configDir, "achievement_name_to_block.json").writeText(mappingJson.toString(), Charsets.UTF_8)
-            }
-
-            // Seed the GSE Saves file with the real earned state from Steam to avoid re-trigger notifications
-            val context = instance!!.applicationContext
-            val gseDirs = getGseSaveDirs(context, appId)
-            seedGseSaveAchievements(gseDirs, result.achievements)
-        }
-
-        // Seed the GSE achievements file to ensure that we don't get early unlock triggers (Games such as Brotato do re-triggers on launch).
-        // merges results with ones from Steam Servers so we don't overwrite offline achievements.
-        private fun seedGseSaveAchievements(dirs: List<File>, achievements: List<app.gamenative.statsgen.Achievement>) {
-            if (achievements.isEmpty()) return
-            for (dir in dirs) {
-                try {
-                    dir.mkdirs()
-                    val file = File(dir, "achievements.json")
-                    // grab existing file or create new if nothing exists.
-                    val merged = if (file.exists()) {
-                        try {
-                            JSONObject(file.readText(Charsets.UTF_8))
-                        } catch (e: Exception) {
-                            Timber.w(e, "Failed to parse existing GSE achievements.json in ${dir.absolutePath}, starting fresh")
-                            JSONObject()
-                        }
-                    } else {
-                        JSONObject()
-                    }
-
-                    // Apply achievements earned & timestamp to file where matched & persists local if local is earned & timestamped.
-                    for (ach in achievements) {
-                        val existing = if (merged.has(ach.name)) merged.getJSONObject(ach.name) else JSONObject()
-                        val localEarned = existing.optBoolean("earned", false)
-                        val steamEarned = ach.unlocked ?: false
-                        val earned = localEarned || steamEarned
-                        val localTime = existing.optLong("earned_time", 0L)
-                        val steamTime = (ach.unlockTimestamp ?: 0).toLong()
-                        val earnedTime = maxOf(localTime, steamTime)
-                        existing.put("earned", earned)
-                        existing.put("earned_time", earnedTime)
-                        merged.put(ach.name, existing)
-                    }
-
-                    file.writeText(merged.toString(2), Charsets.UTF_8)
-                    Timber.d("Seeded GSE Saves achievements.json in ${dir.absolutePath}")
-                } catch (e: Exception) {
-                    Timber.e(e, "Failed to seed GSE Saves achievements.json in ${dir.absolutePath}")
-                }
-            }
-        }
-
-        fun getGseSaveDirs(context: Context, appId: Int): List<File> {
-            val imageFs = ImageFs.find(context)
-            val dirs = mutableListOf<File>()
-            dirs.add(File(
-                imageFs.rootDir,
-                "${ImageFs.WINEPREFIX}/drive_c/users/xuser/AppData/Roaming/GSE Saves/$appId"
-            ))
-            val accountId = userSteamId?.accountID?.toInt()
-                ?: PrefManager.steamUserAccountId.takeIf { it != 0 }
-            if (accountId != null) {
-                dirs.add(File(
-                    imageFs.rootDir,
-                    "${ImageFs.WINEPREFIX}/drive_c/Program Files (x86)/Steam/userdata/$accountId/$appId"
-                ))
-            }
-            return dirs
-        }
-
-        /**
-         * Scans GSE save directories for unlocked achievements and a stats directory.
-         * Shared by [syncAchievementsFromGoldberg] and [AchievementWatcher].
-         *
-         * @return pair of (unlocked achievement names, first stats directory found or null)
-         */
-        fun collectGseUnlocksAndStats(gseDirs: List<File>): Pair<Set<String>, File?> {
-            val unlocked = mutableSetOf<String>()
-            var statsDir: File? = null
-            for (dir in gseDirs) {
-                val achFile = File(dir, "achievements.json")
-                if (achFile.exists()) {
-                    try {
-                        val json = JSONObject(achFile.readText(Charsets.UTF_8))
-                        for (name in json.keys()) {
-                            val entry = json.optJSONObject(name) ?: continue
-                            if (entry.optBoolean("earned", false)) {
-                                unlocked.add(name)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Timber.e(e, "Failed to parse achievements.json in ${dir.absolutePath}")
-                    }
-                }
-                val sd = File(dir, "stats")
-                if (statsDir == null && sd.isDirectory && (sd.listFiles()?.isNotEmpty() == true)) {
-                    statsDir = sd
-                }
-            }
-            return unlocked to statsDir
-        }
-
-        suspend fun syncAchievementsFromGoldberg(context: Context, appId: Int) {
-            val gseSaveDirs = getGseSaveDirs(context, appId).filter { it.isDirectory }
-            if (gseSaveDirs.isEmpty()) {
-                Timber.d("No GSE save directory found for appId=$appId")
-                return
-            }
-
-            val (unlockedNames, gseStatsDir) = collectGseUnlocksAndStats(gseSaveDirs)
-
-            if (unlockedNames.isEmpty() && gseStatsDir == null) {
-                Timber.d("No earned achievements or stats found in Goldberg output for appId=$appId")
-                return
-            }
-
-            val configDirectory = findSteamSettingsDir(context, appId)
-            if (configDirectory == null) {
-                Timber.w("Could not find steam_settings directory for appId=$appId")
-                return
-            }
-
-            val hasStats = gseStatsDir != null
-            Timber.i("Found ${unlockedNames.size} earned achievements and ${if (hasStats) "stats" else "no stats"} for appId=$appId, syncing to Steam")
-            val result = storeAchievementUnlocks(appId, configDirectory, unlockedNames, gseStatsDir ?: gseSaveDirs.first().resolve("stats"))
-            result.onSuccess {
-                Timber.i("Successfully synced achievements and stats to Steam for appId=$appId")
-            }.onFailure { e ->
-                Timber.e(e, "Failed to sync achievements and stats to Steam for appId=$appId")
-            }
-        }
-
-        fun findSteamSettingsDir(context: Context, appId: Int): String? {
-            val appDirPath = getAppDirPath(appId)
-            val appDirSettings = File(appDirPath, "steam_settings")
-            if (File(appDirSettings, "achievement_name_to_block.json").exists()) {
-                return appDirSettings.absolutePath
-            }
-
-            val container = ContainerUtils.getContainer(context, "STEAM_$appId")
-            val coldclientSettings = File(
-                container.rootDir,
-                ".wine/drive_c/Program Files (x86)/Steam/steam_settings"
-            )
-            if (File(coldclientSettings, "achievement_name_to_block.json").exists()) {
-                return coldclientSettings.absolutePath
-            }
-
-            return null
-        }
-
-        suspend fun storeAchievementUnlocks(
-            appId: Int,
-            configDirectory: String,
-            unlockedNames: Set<String>,
-            gseStatsDir: File
-        ): Result<Unit> = runCatching {
-            val steamUser = instance!!._steamUser!!
-            val userStats = instance?._steamUserStats!!.getUserStats(appId, steamUser.steamID!!).await()
-            if (userStats.result != EResult.OK) {
-                throw IllegalStateException("getUserStats failed: ${userStats.result}")
-            }
-
-            val allStats = mutableMapOf<Int, Int>()
-
-            // Build achievement name-to-block mapping from on-disk file
-            val mappingFile = File(configDirectory, "achievement_name_to_block.json")
-            if (mappingFile.exists() && unlockedNames.isNotEmpty()) {
-                val mappingJson = JSONObject(mappingFile.readText(Charsets.UTF_8))
-                val nameToBlockBit = mutableMapOf<String, Pair<Int, Int>>()
-                for (key in mappingJson.keys()) {
-                    val arr = mappingJson.optJSONArray(key) ?: continue
-                    if (arr.length() >= 2) {
-                        nameToBlockBit[key] = Pair(arr.getInt(0), arr.getInt(1))
-                    }
-                }
-
-                // Seed with current achievement bitmasks from server
-                for (block in userStats.achievementBlocks ?: emptyList()) {
-                    val blockId = (block.achievementId as? Number)?.toInt() ?: continue
-                    var bitmask = 0
-                    val unlockTimes = block.unlockTime ?: emptyList()
-                    for (i in unlockTimes.indices) {
-                        val t = unlockTimes[i]
-                        if ((t as? Number)?.toLong() != 0L) bitmask = bitmask or (1 shl i)
-                    }
-                    allStats[blockId] = bitmask
-                }
-
-                // Merge in newly unlocked achievements
-                for (name in unlockedNames) {
-                    val (blockId, bitIndex) = nameToBlockBit[name] ?: continue
-                    val current = allStats.getOrDefault(blockId, 0)
-                    allStats[blockId] = current or (1 shl bitIndex)
-                }
-            }
-
-            // Merge GSE stat files using schema from getUserStats for name->id mapping
-            if (gseStatsDir.isDirectory) {
-                val statNameToId = mutableMapOf<String, Int>()
-                try {
-                    val parsedSchema = VdfParser().binaryLoads(userStats.schema.toByteArray())
-                    for ((_, appData) in parsedSchema) {
-                        if (appData !is Map<*, *>) continue
-                        val statInfo = (appData as Map<String, Any>)["stats"] as? Map<String, Any> ?: continue
-                        for ((statKey, statData) in statInfo) {
-                            if (statData !is Map<*, *>) continue
-                            val stat = statData as Map<String, Any>
-                            val statType = stat["type"]?.toString() ?: continue
-                            if (statType == StatType.STAT_TYPE_BITS || statType == StatType.ACHIEVEMENTS) continue
-                            val name = stat["name"]?.toString()?.lowercase() ?: continue
-                            val id = statKey.toIntOrNull() ?: continue
-                            statNameToId[name] = id
-                        }
-                    }
-                } catch (e: Exception) {
-                    Timber.e(e, "Failed to parse schema for stat name mapping, appId=$appId")
-                }
-
-                if (statNameToId.isNotEmpty()) {
-                    for (statFile in gseStatsDir.listFiles() ?: emptyArray()) {
-                        if (!statFile.isFile) continue
-                        val statId = statNameToId[statFile.name.lowercase()] ?: continue
-                        val bytes = statFile.readBytes()
-                        if (bytes.size >= 4) {
-                            val value = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).int
-                            allStats[statId] = value
-                            Timber.d("Read GSE stat: ${statFile.name} -> statId=$statId, value=$value")
-                        }
-                    }
-                }
-            }
-
-            if (allStats.isEmpty()) {
-                Timber.d("No stats or achievements to store for appId=$appId")
-                return@runCatching
-            }
-
-            val statsToStore = allStats.map { (id, value) -> Stats(statId = id, statValue = value) }
-            Timber.d("storeUserStats: appId=$appId, crcStats=${userStats.crcStats}, stats=$statsToStore")
-            val mySteamId = steamUser.steamID!!
-            val callback = instance?._steamUserStats!!.storeUserStats(
-                appId, statsToStore, mySteamId, mySteamId, userStats.crcStats
-            ).await()
-            if (callback.result != EResult.OK) {
-                throw IllegalStateException("storeUserStats failed: ${callback.result}")
-            }
-            if (callback.statsOutOfDate) {
-                Timber.w("Stats were out of date on server for appId=$appId")
-            }
-            if (callback.statsFailedValidation.isNotEmpty()) {
-                Timber.w("${callback.statsFailedValidation.size} stats failed validation for appId=$appId")
-                callback.statsFailedValidation.forEach { f ->
-                    Timber.w("  statId=${f.statId} reverted to ${f.revertedStatValue}")
-                }
-            }
-        }
-
     }
 
     override fun onCreate() {
@@ -4582,13 +4204,6 @@ class SteamService : Service(), IChallengeUrlChanged {
                 notificationHelper.notify("Connected")
 
                 _loginResult = LoginResult.Success
-
-                // Resume any workshop downloads that were interrupted
-                scope.launch {
-                    resumePendingWorkshopDownloads()
-                }
-
-                syncPendingOfflineAchievements()
             }
 
             else -> {
@@ -4604,41 +4219,6 @@ class SteamService : Service(), IChallengeUrlChanged {
 
         val event = SteamEvent.LogonEnded(PrefManager.username, _loginResult)
         PluviaApp.events.emit(event)
-    }
-
-    private suspend fun resumePendingWorkshopDownloads() {
-        if (PrefManager.downloadOnWifiOnly && !hasWifiOrEthernet) {
-            Timber.i("Skipping pending workshop downloads — WiFi-only mode and no WiFi")
-            return
-        }
-
-        val dao = appDao ?: return
-        val pendingAppIds = dao.getAppsWithPendingWorkshopDownloads()
-        if (pendingAppIds.isEmpty()) return
-
-        Timber.i("Resuming ${pendingAppIds.size} pending workshop download(s)")
-        val context = this@SteamService
-        for (appId in pendingAppIds) {
-            // If the game is no longer installed, the pending flag is stale — clear it.
-            if (!isAppInstalled(appId)) {
-                Timber.i("App $appId no longer installed, clearing stale workshop state")
-                dao.clearWorkshopState(appId)
-                continue
-            }
-
-            // Skip if a download is already running for this app
-            if (getAppDownloadInfo(appId) != null) continue
-
-            val enabledIds = WorkshopManager.parseEnabledIds(
-                dao.getEnabledWorkshopItemIds(appId),
-            )
-            if (enabledIds.isEmpty()) {
-                dao.setWorkshopDownloadPending(appId, false)
-                continue
-            }
-
-            WorkshopManager.startWorkshopDownload(appId, enabledIds, context)
-        }
     }
 
     internal fun addPendingSyncApp(appId: Int) {
@@ -4666,75 +4246,6 @@ class SteamService : Service(), IChallengeUrlChanged {
         }
     }
 
-    private fun syncPendingOfflineAchievements() {
-        offlineAchievementSyncJob?.cancel()
-        offlineAchievementSyncJob = scope.launch {
-            try {
-                delay(2_000)
-
-                if (!isConnected || !isLoggedIn) {
-                    Timber.tag("achievements").d("Skipping reconnect achievement sync sweep — Steam no longer connected")
-                    return@launch
-                }
-
-                val appsToSync = pendingSyncAppIds.toSet()
-                if (appsToSync.isEmpty()) {
-                    Timber.tag("achievements").d("Skipping reconnect achievement sync sweep — no apps were closed while offline")
-                    return@launch
-                }
-
-                Timber.tag("achievements").i("Syncing offline achievements for ${appsToSync.size} app(s) closed while disconnected")
-                for (appId in appsToSync) {
-                    ensureActive()
-
-                    if (!isConnected || !isLoggedIn) {
-                        Timber.tag("achievements").d("Stopping reconnect achievement sync sweep — Steam no longer connected")
-                        return@launch
-                    }
-
-                    val gseSaveDirs = getGseSaveDirs(applicationContext, appId).filter { it.isDirectory }
-                    if (gseSaveDirs.isEmpty()) {
-                        removePendingSyncApp(appId)
-                        continue
-                    }
-
-                    val hasOfflineAchievementData = gseSaveDirs.any { dir ->
-                        File(dir, "achievements.json").exists() ||
-                            (File(dir, "stats").isDirectory && (File(dir, "stats").listFiles()?.isNotEmpty() == true))
-                    }
-                    if (!hasOfflineAchievementData) {
-                        removePendingSyncApp(appId)
-                        continue
-                    }
-
-                    if (!tryAcquireSync(appId)) {
-                        Timber.tag("achievements").d("Skipping reconnect achievement sync for appId=$appId — sync already in progress")
-                        continue
-                    }
-
-                    try {
-                        Timber.tag("achievements").i("Attempting reconnect achievement sync for appId=$appId")
-                        syncAchievementsFromGoldberg(applicationContext, appId)
-                        removePendingSyncApp(appId)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        Timber.tag("achievements").e(e, "Reconnect achievement sync failed for appId=$appId")
-                    } finally {
-                        releaseSync(appId)
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Timber.tag("achievements").e(e, "Reconnect achievement sync sweep failed")
-            } finally {
-                if (offlineAchievementSyncJob?.isActive != true) {
-                    offlineAchievementSyncJob = null
-                }
-            }
-        }
-    }
 
     private fun onLoggedOff(callback: LoggedOffCallback) {
         Timber.i("Logged off of Steam: ${callback.result}")
@@ -4753,16 +4264,8 @@ class SteamService : Service(), IChallengeUrlChanged {
             // received when a client runs an app and wants to forcibly close another
             // client running an app. The callback doesn't carry the remote app id, so the
             // dialog falls back to a generic "another game" label.
-            if (PluviaApp.xEnvironment != null) {
-                if (!_isHandlingConflict.getAndSet(true)) {
-                    _isPlayingBlocked.value = true
-                    PluviaApp.events.emit(SteamEvent.PlayingBlocked(remoteAppName = null))
-                }
-                reconnect()
-            } else {
-                PluviaApp.events.emit(SteamEvent.ForceCloseApp)
-                reconnect()
-            }
+            PluviaApp.events.emit(SteamEvent.ForceCloseApp)
+            reconnect()
         } else {
             reconnect()
         }

@@ -54,7 +54,6 @@ import app.gamenative.ui.component.GameStatsRow
 import app.gamenative.ui.component.focusRing
 import app.gamenative.ui.data.GameCardStats
 import app.gamenative.ui.util.ListItemImage
-import app.gamenative.utils.CustomGameScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -333,14 +332,5 @@ private fun InstallStatusBadge(
  */
 private fun getListIconUrl(context: Context, appInfo: LibraryItem): String {
     if (appInfo.isRecommended) return appInfo.iconHash
-    return if (appInfo.gameSource == GameSource.CUSTOM_GAME) {
-        val path = CustomGameScanner.findIconFileForCustomGame(context, appInfo.appId)
-        if (!path.isNullOrEmpty()) {
-            if (path.startsWith("file://")) path else "file://$path"
-        } else {
-            appInfo.clientIconUrl
-        }
-    } else {
-        appInfo.clientIconUrl
-    }
+    return appInfo.clientIconUrl
 }

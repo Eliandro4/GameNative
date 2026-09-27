@@ -60,7 +60,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import app.gamenative.ui.component.settings.SettingsListDropdown
 import app.gamenative.ui.component.settings.SettingsMultiListDropdown
-import app.gamenative.ui.component.ACHIEVEMENT_NOTIFICATION_POSITION
 import app.gamenative.ui.enums.LibraryTab
 import androidx.compose.ui.viewinterop.AndroidView
 import android.widget.ImageView
@@ -71,7 +70,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import kotlin.math.roundToInt
-import com.winlator.core.AppUtils
 import app.gamenative.ui.component.dialog.MessageDialog
 import app.gamenative.ui.component.dialog.LoadingDialog
 import androidx.compose.runtime.LaunchedEffect
@@ -100,34 +98,10 @@ import app.gamenative.service.amazon.AmazonAuthManager
 import app.gamenative.utils.PlatformOAuthHandlers
 import app.gamenative.utils.StorageUtils
 import app.gamenative.data.GameSource
-import app.gamenative.sync.FrontendSyncManager
 import app.gamenative.ui.util.PlatformAuthUiHelpers
 import app.gamenative.ui.util.SnackbarManager
 
-/** Icon button that triggers [FrontendSyncManager.resyncAll] and shows a spinner while syncing. */
-@Composable
-private fun FrontendSyncResyncButton() {
-    val isSyncing by FrontendSyncManager.isSyncing.collectAsState()
-    val resyncLabel = stringResource(R.string.frontend_sync_resync_all)
-    IconButton(
-        onClick = { FrontendSyncManager.resyncAll() },
-        modifier = Modifier.semantics { contentDescription = resyncLabel },
-    ) {
-        if (isSyncing) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                strokeWidth = 2.dp,
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Default.Sync,
-                contentDescription = stringResource(R.string.frontend_sync_resync_all),
-            )
-        }
-    }
-}
-
-/** Settings group covering interface preferences: theme, downloads, frontend sync, language, and icons. */
+/** Settings group covering interface preferences: theme, downloads, language, and icons. */
 @Composable
 fun SettingsGroupInterface(
     appTheme: AppTheme,
@@ -156,10 +130,6 @@ fun SettingsGroupInterface(
     var showGamepadHints by rememberSaveable { mutableStateOf(PrefManager.showGamepadHints) }
     var showRecommendations by rememberSaveable { mutableStateOf(PrefManager.showRecommendations) }
     var libraryTabs by remember { mutableStateOf(PrefManager.libraryTabs) }
-
-    // Achievements
-    var showAchievementNotifications by rememberSaveable { mutableStateOf(PrefManager.achievementShowNotification) }
-    var playAchievementSound by rememberSaveable { mutableStateOf(PrefManager.achievementPlaySound) }
 
     // Language selection dialog
     var openLanguageDialog by rememberSaveable { mutableStateOf(false) }
@@ -209,8 +179,6 @@ fun SettingsGroupInterface(
     var showEpicLogoutDialog by rememberSaveable { mutableStateOf(false) }
     var epicLogoutLoading by rememberSaveable { mutableStateOf(false) }
 
-    var showFrontendSyncDialog by rememberSaveable { mutableStateOf(false) }
-
     val coroutineScope = rememberCoroutineScope()
     // Use Activity lifecycle scope for the OAuth result callback so it stays valid after
     // returning from GOGOAuthActivity (composition may have been left → rememberCoroutineScope cancelled).
@@ -256,44 +224,6 @@ fun SettingsGroupInterface(
     }
 
     SettingsGroup(modifier = Modifier.background(Color.Transparent)) {
-        SettingsSwitch(
-            colors = settingsTileColorsAlt(),
-            title = { Text(text = stringResource(R.string.settings_achievement_show_notification)) },
-            state = showAchievementNotifications,
-            onCheckedChange = {
-                showAchievementNotifications = it
-                PrefManager.achievementShowNotification = it
-            },
-        )
-        SettingsSwitch(
-            colors = settingsTileColorsAlt(),
-            title = { Text(text = stringResource(R.string.settings_achievement_play_sound)) },
-            state = playAchievementSound,
-            onCheckedChange = {
-                playAchievementSound = it
-                PrefManager.achievementPlaySound = it
-            },
-        )
-        // Achievement notification position
-        val achPositionKeys = remember { ACHIEVEMENT_NOTIFICATION_POSITION.keys.toList() }
-        val achPositionLabelResIds = remember { ACHIEVEMENT_NOTIFICATION_POSITION.values.toList() }
-        val achPositionLabels = achPositionLabelResIds.map { stringResource(it) }
-        var achPositionIndex by rememberSaveable {
-            mutableStateOf(
-                achPositionKeys.indexOf(PrefManager.achievementNotificationPosition).takeIf { it >= 0 } ?: achPositionKeys.indexOf("bottom_right")
-            )
-        }
-        SettingsListDropdown(
-            title = { Text(text = stringResource(R.string.settings_achievement_notification_position)) },
-            items = achPositionLabels,
-            value = achPositionIndex,
-            onItemSelected = { idx ->
-                achPositionIndex = idx
-                PrefManager.achievementNotificationPosition = achPositionKeys[idx]
-            },
-            colors = settingsTileColorsAlt(),
-        )
-
         SettingsSwitch(
             colors = settingsTileColorsAlt(),
             title = { Text(text = stringResource(R.string.settings_interface_external_links_title)) },
@@ -446,19 +376,6 @@ fun SettingsGroupInterface(
             subtitle = { Text(text = stringResource(R.string.settings_interface_library_tabs_subtitle)) },
         )
 
-        if (!BuildConfig.MODERN_ANDROID) {
-            val anyFrontendSyncConfigured by FrontendSyncManager.anyConfigured.collectAsState()
-            SettingsMenuLink(
-                colors = settingsTileColorsAlt(),
-                title = { Text(text = stringResource(R.string.settings_interface_frontend_sync_title)) },
-                subtitle = { Text(text = stringResource(R.string.settings_interface_frontend_sync_subtitle)) },
-                action = if (anyFrontendSyncConfigured) {
-                    { FrontendSyncResyncButton() }
-                } else null,
-                onClick = { showFrontendSyncDialog = true },
-            )
-        }
-
         // Language selection
         SettingsMenuLink(
             colors = settingsTileColorsAlt(),
@@ -597,68 +514,52 @@ fun SettingsGroupInterface(
             }
         }
 
-        val ctx = LocalContext.current
-        val sm = ctx.getSystemService(StorageManager::class.java)
-
-        // All writable non-primary volumes (SD / USB).
-        // getExternalFilesDirs misses USB OTG on most devices, so StorageUtils also
-        // enumerates StorageManager.storageVolumes and synthesizes the per-app files dir.
-        // Runs off the composition thread because synthesizing the USB candidate
-        // may need mkdirs() on first plug-in.
-        val externalStorageFallbackLabel = stringResource(R.string.storage_external)
-        val dirs by produceState(initialValue = emptyList<File>(), ctx) {
-            value = withContext(Dispatchers.IO) {
-                StorageUtils.getAllExternalFilesDirs(ctx)
-                    .filter { Environment.getExternalStorageState(it) == Environment.MEDIA_MOUNTED }
-                    .filter { sm?.getStorageVolume(it)?.isPrimary != true }
+        val storageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) {
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                    val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
+                    val split = docId.split(":")
+                    val type = split[0]
+                    val path = if (split.size > 1) split[1] else ""
+                    val realPath = if ("primary".equals(type, ignoreCase = true)) {
+                        Environment.getExternalStorageDirectory().toString() + "/" + path
+                    } else {
+                        "/storage/" + type + "/" + path
+                    }
+                    PrefManager.externalStoragePath = realPath
+                    PrefManager.useExternalStorage = true
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to persist document tree URI")
+                }
             }
         }
 
-        // Labels the user sees
-        val labels = remember(dirs) {
-            dirs.map { dir ->
-                sm?.getStorageVolume(dir)?.getDescription(ctx) ?: externalStorageFallbackLabel
-            }
-        }
         var useExternalStorage by rememberSaveable { mutableStateOf(PrefManager.useExternalStorage) }
         SettingsSwitch(
             colors = settingsTileColorsAlt(),
-            enabled = dirs.isNotEmpty(),
             title = { Text(text = stringResource(R.string.settings_interface_external_storage_title)) },
             subtitle = {
-                if (dirs.isEmpty())
+                if (PrefManager.externalStoragePath.isBlank())
                     Text(stringResource(R.string.settings_interface_no_external_storage))
                 else
-                    Text(stringResource(R.string.settings_interface_external_storage_subtitle))
+                    Text(PrefManager.externalStoragePath)
             },
             state = useExternalStorage,
             onCheckedChange = {
                 useExternalStorage = it
                 PrefManager.useExternalStorage = it
-                if (it && dirs.isNotEmpty()) {
-                    PrefManager.externalStoragePath = StorageUtils.preferredInstallRoot(dirs[0])
-                }
             },
         )
         if (useExternalStorage) {
-            // Currently selected item
-            var selectedIndex by rememberSaveable(dirs) {
-                mutableStateOf(
-                    dirs.indexOfFirst { dir ->
-                        dir.absolutePath == PrefManager.externalStoragePath ||
-                            StorageUtils.publicInstallRoot(dir)?.absolutePath == PrefManager.externalStoragePath
-                    }.takeIf { it >= 0 } ?: 0,
-                )
-            }
-            SettingsListDropdown(
-                title = { Text(text = stringResource(R.string.settings_interface_storage_volume_title)) },
-                items = labels,
-                value = selectedIndex,
-                onItemSelected = { idx ->
-                    selectedIndex = idx
-                    PrefManager.externalStoragePath = StorageUtils.preferredInstallRoot(dirs[idx])
-                },
+            SettingsMenuLink(
                 colors = settingsTileColorsAlt(),
+                title = { Text(text = "Choose Directory") },
+                subtitle = { Text(text = "Select a public folder to store downloaded games") },
+                onClick = { storageLauncher.launch(null) }
             )
         }
         // Steam download server selection
@@ -729,7 +630,10 @@ fun SettingsGroupInterface(
                 delay(200)
             }
             // Restart the app
-            AppUtils.restartApplication(context)
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            Runtime.getRuntime().exit(0)
         }
     }
 
@@ -800,7 +704,10 @@ fun SettingsGroupInterface(
                 delay(200)
             }
             // Restart the app
-            AppUtils.restartApplication(context)
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            Runtime.getRuntime().exit(0)
         }
     }
 
@@ -809,10 +716,6 @@ fun SettingsGroupInterface(
         progress = -1f, // Indeterminate progress
         message = stringResource(R.string.settings_language_changing),
     )
-
-    if (showFrontendSyncDialog) {
-        FrontendSyncDialog(onDismiss = { showFrontendSyncDialog = false })
-    }
 
     // GOG/Epic/Amazon login and logout flows (including loading dialogs and
     // confirmations) are now owned by the System Menu and shared helpers.

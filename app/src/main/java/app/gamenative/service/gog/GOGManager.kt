@@ -17,10 +17,6 @@ import app.gamenative.utils.ContainerUtils
 import app.gamenative.utils.FileUtils
 import app.gamenative.utils.MarkerUtils
 import app.gamenative.utils.Net
-import com.winlator.container.Container
-import com.winlator.core.envvars.EnvVars
-import com.winlator.core.FileUtils as WinlatorFileUtils
-import com.winlator.xenvironment.components.GuestProgramLauncherComponent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -583,10 +579,6 @@ class GOGManager @Inject constructor(
                     Timber.d("Updated database: game marked as not installed")
                 }
 
-                withContext(Dispatchers.Main) {
-                    ContainerUtils.deleteContainer(context, libraryItem.appId)
-                }
-
                 // Trigger library refresh event
                 app.gamenative.PluviaApp.events.emitJava(
                     app.gamenative.events.AndroidEvent.LibraryInstallStatusChanged(libraryItem.gameId, app.gamenative.data.GameSource.GOG),
@@ -686,16 +678,6 @@ class GOGManager @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Failed to get executable for GOG game $gameId")
             ""
-        }
-    }
-
-    /**
-     * Resolves the effective launch executable for a GOG game (container config or auto-detected).
-     * Returns empty string if no executable can be found.
-     */
-    suspend fun getLaunchExecutable(appId: String, container: Container): String = withContext(Dispatchers.IO) {
-        container.executablePath.ifEmpty {
-            getInstalledExe(LibraryItem(appId = appId, name = "", gameSource = GameSource.GOG))
         }
     }
 
